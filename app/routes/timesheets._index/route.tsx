@@ -1,6 +1,15 @@
-import { useLoaderData } from "react-router";
-import { useState } from "react";
+import { useLoaderData, Link, useNavigate } from "react-router";
+import { useState, useMemo } from "react";
 import { getDB } from "~/db/getDB";
+import { useCalendarApp, ScheduleXCalendar } from '@schedule-x/react'
+import {
+  createViewDay,
+  createViewMonthAgenda,
+  createViewMonthGrid,
+  createViewWeek,
+} from '@schedule-x/calendar'
+import { createEventsServicePlugin } from '@schedule-x/events-service'
+import '@schedule-x/theme-default/dist/index.css'
 
 export async function loader() {
   const db = await getDB();
@@ -13,41 +22,108 @@ export async function loader() {
 
 export default function TimesheetsPage() {
   const { timesheetsAndEmployees } = useLoaderData();
+  const [viewMode, setViewMode] = useState('table');
+  const [filterEmployee, setFilterEmployee] = useState("");
+  const navigate = useNavigate();
+
+  const employees = [...new Set(timesheetsAndEmployees.map((timesheet: any) => timesheet.full_name))];
+
+  const filteredTimesheets = useMemo(() => {
+    let result = [...timesheetsAndEmployees];
+    if (filterEmployee) {
+      result = result.filter(timesheet => timesheet.full_name === filterEmployee);
+    }
+    return result;
+  }, [timesheetsAndEmployees, filterEmployee]);
+
+  const events = filteredTimesheets.map((timesheet: any) => {
+    const extractTime = (datetimeString: string) => {
+      const parts = datetimeString.split(' ');
+      return parts[0]; 
+    };
+    
+    return {
+      id: timesheet.id,
+      title: `Timesheet for ${timesheet.full_name}`,
+      start: extractTime(timesheet.start_time),
+      end: extractTime(timesheet.end_time),
+      employee_id: timesheet.employee_id,
+      description: timesheet.summary,
+    };
+  });
+
+  const calendar = useCalendarApp({
+    views: [
+      createViewMonthGrid(),
+      createViewWeek(),
+      createViewDay(),
+      createViewMonthAgenda(),
+    ],
+    events,
+    defaultView: 'monthGrid',
+  });
 
   return (
     <div>
       <div>
-        <button>Table View</button>
-        <button>Calendar View</button>
+        <button onClick={() => setViewMode('table')}>
+          Table View
+        </button>
+        <button onClick={() => setViewMode('calendar')}>
+          Calendar View
+        </button>
       </div>
-      {/* Replace `true` by a variable that is changed when the view buttons are clicked */}
-      {true ? (
-        <div>
-          {timesheetsAndEmployees.map((timesheet: any) => (
-            <div key={timesheet.id}>
-              <ul>
-                <li>Timesheet #{timesheet.id}</li>
-                <ul>
-                  <li>Employee: {timesheet.full_name} (ID: {timesheet.employee_id})</li>
-                  <li>Start Time: {timesheet.start_time}</li>
-                  <li>End Time: {timesheet.end_time}</li>
-                </ul>
-              </ul>
-            </div>
+      <div>
+        <select
+          value={filterEmployee}
+          onChange={(e) => setFilterEmployee(e.target.value)}
+        >
+          <option value="">All Employees</option>
+          {employees.map(emp => (
+            <option key={emp as string} value={emp as string}>{emp as string}</option>
           ))}
+        </select>
+      </div>
+      {viewMode === 'table' ? (
+        <div>
+          <table border={1}>
+            <thead>
+              <tr>
+                <th>Timesheet ID</th>
+                <th>Employee</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Summary</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTimesheets.map((timesheet: any) => (
+                <tr key={timesheet.id}>
+                  <td>{timesheet.id}</td>
+                  <td>{timesheet.full_name} (ID: {timesheet.employee_id})</td>
+                  <td>{timesheet.start_time}</td>
+                  <td>{timesheet.end_time}</td>
+                  <td>{timesheet.summary}</td>
+                  <td>
+                    <Link to={`/timesheets/${timesheet.id}`}>
+                      View
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
         <div>
-          <p>
-            To implement, see <a href="https://schedule-x.dev/docs/frameworks/react">Schedule X React documentation</a>.
-          </p>
+          <br />
+          <ScheduleXCalendar calendarApp={calendar} />
         </div>
       )}
       <hr />
-      <ul>
-        <li><a href="/timesheets/new">New Timesheet</a></li>
-        <li><a href="/employees">Employees</a></li>
-      </ul>
+      <button onClick={() => navigate("/timesheets/new")}>Create New Timesheet</button><br />
+      <button onClick={() => navigate("/employees")}>View All Employees</button><br />
     </div>
   );
 }
